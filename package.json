@@ -1,0 +1,16 @@
+{
+  "name": "actual-telegram-bot",
+  "version": "1.0.0",
+  "description": "Add transactions to Actual Budget by sending Telegram messages",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "test": "node src/parser.test.js"
+  },
+  "engines": { "node": ">=20.6" },
+  "dependencies": {
+    "@actual-app/api": "latest",
+    "grammy": "^1.30.0"
+  }
+}

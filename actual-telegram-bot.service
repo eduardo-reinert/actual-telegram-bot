@@ -1,0 +1,16 @@
+[Unit]
+Description=Actual Budget Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/actual-telegram-bot
+ExecStart=/usr/bin/node --env-file=.env src/index.js
+Restart=always
+RestartSec=10
+Environment=NODE_OPTIONS=--max-old-space-size=256
+
+[Install]
+WantedBy=multi-user.target

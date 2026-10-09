@@ -1,6 +1,7 @@
 import { Bot, InlineKeyboard } from 'grammy';
 import * as actual from './actual.js';
 import { parseMessage } from './parser.js';
+import { getActiveAccount, setActiveAccount } from './state.js';
 
 const {
   TELEGRAM_BOT_TOKEN, ALLOWED_USER_IDS = '', CURRENCY = 'BRL', LOCALE = 'pt-BR',
@@ -23,11 +24,12 @@ const HELP = `<b>Actual Budget bot</b>
 <code>80 mercado 15/03</code>
 
 • <code>#category</code> · <code>@account</code> · date: hoje, ontem, dd/mm, dd/mm/aaaa
-• No @account → default account
+• No @account → your active account (see /accounts)
+• Account names with spaces: <code>@conta_corrente</code>
 • Use the buttons under each confirmation to undo or set a category
 
 <b>Commands</b>
-/accounts · /categories · /balance [account] · /undo · /id · /help`;
+/accounts (view &amp; choose account) · /categories · /balance [account] · /undo · /id · /help`;
 
 const bot = new Bot(TELEGRAM_BOT_TOKEN);
 const lastTx = new Map(); // userId -> last transaction id (for /undo)
@@ -45,9 +47,51 @@ bot.use(async (ctx, next) => {
 
 bot.command(['help', 'ajuda'], (ctx) => ctx.reply(HELP, HTML));
 
-bot.command(['accounts', 'contas'], async (ctx) => {
+// Builds the /accounts message + one button per account.
+async function accountsView(userId) {
   const list = await actual.listAccounts();
-  await ctx.reply('<b>Accounts</b>\n' + list.map((a) => `• ${esc(a.name)}: ${money(a.balance)}`).join('\n'), HTML);
+  const active = getActiveAccount(userId);
+  const current = list.find((a) => a.name === active) ?? list.find((a) => a.isDefault) ?? list[0];
+
+  const lines = list.map((a) => {
+    const tag = a.name.trim().replace(/\s+/g, '_');
+    return `${a === current ? '✅' : '▫️'} <b>${esc(a.name)}</b>${a.offbudget ? ' <i>(off budget)</i>' : ''}\n` +
+           `     ${money(a.balance)} · <code>@${esc(tag)}</code>`;
+  });
+
+  const kb = new InlineKeyboard();
+  list.forEach((a, i) => {
+    kb.text(`${a === current ? '✅ ' : ''}${a.name}`, `a:${i}`);
+    if (i % 2 === 1) kb.row();
+  });
+  if (list.length % 2 === 1) kb.row();
+  kb.text('↺ Use default', 'a:default');
+
+  const text =
+    `<b>Accounts</b>\n\n${lines.join('\n')}\n\n` +
+    `Current account for new transactions: <b>${esc(current?.name ?? '?')}</b>\n` +
+    `Tap an account to change it, or add <code>@tag</code> to a single message.`;
+  return { text, kb, list };
+}
+
+bot.command(['accounts', 'contas'], async (ctx) => {
+  const { text, kb } = await accountsView(ctx.from.id);
+  await ctx.reply(text, { ...HTML, reply_markup: kb });
+});
+
+bot.callbackQuery(/^a:(default|\d+)$/, async (ctx) => {
+  const choice = ctx.match[1];
+  const list = await actual.listAccounts();
+  if (choice === 'default') {
+    setActiveAccount(ctx.from.id, null);
+  } else {
+    const acc = list[Number(choice)];
+    if (!acc) return ctx.answerCallbackQuery({ text: 'Account list changed, send /accounts again' });
+    setActiveAccount(ctx.from.id, acc.name);
+  }
+  const { text, kb } = await accountsView(ctx.from.id);
+  await ctx.answerCallbackQuery({ text: 'Account updated' });
+  await ctx.editMessageText(text, { ...HTML, reply_markup: kb });
 });
 
 bot.command(['categories', 'categorias'], async (ctx) => {
@@ -77,6 +121,7 @@ bot.on('message:text', async (ctx) => {
   if (!parsed) return ctx.reply('I didn\'t understand. Try <code>25.90 padaria</code> or /help', HTML);
   if (parsed.kind === 'cmd') return ctx.reply('Unknown command. Send /help');
 
+  if (!parsed.account) parsed.account = getActiveAccount(ctx.from.id); // null → DEFAULT_ACCOUNT
   const r = await actual.addTransaction(parsed, `${ctx.chat.id}-${ctx.message.message_id}`);
   if (r.duplicate) return ctx.reply('That message was already imported (duplicate ignored).');
 
@@ -140,7 +185,7 @@ await actual.start();
 console.log('✅ Actual Budget loaded');
 
 await bot.api.setMyCommands([
-  { command: 'accounts', description: 'Balances of all accounts' },
+  { command: 'accounts', description: 'View accounts and choose the active one' },
   { command: 'categories', description: 'List categories' },
   { command: 'balance', description: 'Balance of an account' },
   { command: 'undo', description: 'Delete the last transaction' },

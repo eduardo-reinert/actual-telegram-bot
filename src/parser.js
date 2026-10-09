@@ -71,7 +71,7 @@ export function parseMessage(text) {
 
   for (const tok of tokens.slice(amountIdx + 1)) {
     if (tok.startsWith('#') && tok.length > 1) category = tok.slice(1);
-    else if (tok.startsWith('@') && tok.length > 1) account = tok.slice(1);
+    else if (tok.startsWith('@') && tok.length > 1) account = tok.slice(1).replace(/_/g, ' ');
     else {
       const d = parseDateToken(tok);
       if (d) date = d;

@@ -3,49 +3,162 @@
 Send a Telegram message, get a transaction in Actual Budget.
 
 ```
-25.90 padaria                      → expense, payee "padaria", default account
+25.90 padaria                      → expense, payee "padaria", active account
 12,50 uber #transporte @nubank     → explicit category and account
 +3000 salário                      → income
 80 mercado ontem                   → date: hoje, ontem, dd/mm, dd/mm/aaaa
-/accounts  /categories  /balance [account]  /undo  /id  /help
 ```
-Each confirmation has **Undo** and (when no category was assigned) **Set category** buttons.
 
 Actual only ships a Node.js client (no HTTP API), so the bot is Node.js too.
 
-## 1. Create the bot
-1. In Telegram, open **@BotFather** → `/newbot` → pick a name → copy the **token**.
-2. (Optional) `/setprivacy` isn't needed; you'll use the bot in a private chat.
+## Contents
+- [Bot reference](#bot-reference)
+- [Setup](#setup)
+- [Notes](#notes)
 
-## 2. Requirements on the Pi
+---
+
+## Bot reference
+
+### Commands
+
+| Command | Alias | Who can use it | What it does |
+| --- | --- | --- | --- |
+| `/id` | `/start` | **Everyone** | Replies with your numeric Telegram user ID. Use it once during setup to fill in `ALLOWED_USER_IDS`. |
+| `/help` | `/ajuda` | Allowed users | Shows the quick usage guide. |
+| `/accounts` | `/contas` | Allowed users | Lists every open account with its balance and `@tag`, and lets you pick the **active account** with buttons (see below). |
+| `/categories` | `/categorias` | Allowed users | Lists all visible categories, grouped by category group. |
+| `/balance [account]` | `/saldo` | Allowed users | Balance of one account. Without an argument it uses your default account. Write the name with spaces, e.g. `/balance conta corrente`. Partial names work (`/balance nu`). |
+| `/undo` | `/desfazer` | Allowed users | Deletes the last transaction you added through the bot. |
+
+Anyone not in `ALLOWED_USER_IDS` is ignored, except for `/id` and `/start`. Any other `/command` gets *"Unknown command. Send /help"*.
+
+The Telegram command menu (the `/` button) shows: `/accounts`, `/categories`, `/balance`, `/undo`, `/help`.
+
+### Adding a transaction
+
+Send a plain message (no slash). The amount must come first; everything else is optional and can be in any order after it.
+
+```
+<amount> [payee words] [#category] [@account] [date]
+```
+
+| Part | Format | Examples |
+| --- | --- | --- |
+| **Amount** | Number with `.` or `,` and up to 2 decimals. No thousands separator (write `1234,56`, not `1.234,56`). Optional `R$`, `$` or `€` prefix. | `25.90` · `25,90` · `R$ 25,90` · `R$25` |
+| **Type** | Expense by default. A leading `+` makes it income. | `+3000 salário` |
+| **Payee** | Any remaining words. Actual creates the payee if it doesn't exist. | `uber eats` |
+| **Category** | `#` plus one word. Case and accent insensitive; a partial name works if unambiguous. Must be a single word, so for "Fast Food" use `#fast`. | `#transporte` · `#alimentacao` |
+| **Account** | `@` plus the account tag. Underscores stand in for spaces. Overrides the active account for this message only. | `@nubank` · `@conta_corrente` |
+| **Date** | Defaults to today. | `hoje` · `ontem` · `anteontem` · `15/03` · `15/03/2025` · `2025-03-15` |
+
+More examples:
+
+```
+25.90 padaria
+12,50 uber #transporte @nubank ontem
++3000 salário
+R$ 80 mercado 15/03
+45 jantar @conta_corrente hoje
+```
+
+If you don't give a category, your Actual **rules** can still assign one automatically (when `APPLY_RULES=true`). If nothing matches, the confirmation offers a **Set category** button for expenses.
+
+Each message is stored with a unique `imported_id`, so Telegram re-deliveries never create duplicates.
+
+### Confirmation message and buttons
+
+After adding a transaction the bot replies with the amount, payee, account, category and date, plus these buttons:
+
+| Button | When shown | What it does |
+| --- | --- | --- |
+| **↩️ Undo** | Always | Deletes that transaction. |
+| **🏷 Set category** | Expenses with no category | Shows a list of categories to tap; the transaction is updated and the message edited. |
+
+### `/accounts` and the active account
+
+`/accounts` shows something like:
+
+```
+Accounts
+
+✅ Checking
+     R$ 1.250,00 · @Checking
+▫️ Nubank Conta
+     R$ 340,50 · @Nubank_Conta
+▫️ Investments (off budget)
+     R$ 12.000,00 · @Investments
+
+Current account for new transactions: Checking
+```
+
+| Button | What it does |
+| --- | --- |
+| One button per account | Makes that account the **active account**. Messages without `@account` go there. Saved in `data/state.json`, so it survives restarts. |
+| **↺ Use default** | Clears the active account; new transactions go to `DEFAULT_ACCOUNT` from `.env` again. |
+
+The ✅ marks the account that will receive your next transaction. The `@tag` shown is exactly what you can type for a one-off override.
+
+### Error messages you may see
+
+| Message | Meaning |
+| --- | --- |
+| `I didn't understand. Try 25.90 padaria or /help` | The message doesn't start with an amount. |
+| `Account "x" not found (send /accounts)` | No open account matches that name. |
+| `Category "x" not found (send /categories)` | No visible category matches that name. |
+| `That message was already imported (duplicate ignored).` | Same Telegram message was received twice. |
+| `Nothing to undo.` | `/undo` with no transaction added since the bot started. |
+
+`/undo` only remembers the last transaction since the bot last started; the **↩️ Undo** button on a confirmation message keeps working after restarts.
+
+---
+
+## Setup
+
+### 1. Create the bot
+1. In Telegram, open **@BotFather** → `/newbot` → pick a name → copy the **token**.
+2. Use the bot in a private chat; no privacy-mode changes are needed.
+
+### 2. Requirements on the Pi
 - 64-bit Raspberry Pi OS, Pi 3/4/5, ≥1 GB RAM
 - Node.js 20.6+ (22 LTS recommended):
-  ```bash
+```bash
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt install -y nodejs build-essential python3
-  ```
+```
 
-## 3. Install
+### 3. Install
 ```bash
 cd ~/actual-telegram-bot
 npm install
 cp .env.example .env && chmod 600 .env && nano .env
 npm test
 ```
-Fill in `.env`: server URL/password, **Sync ID** (Actual → Settings → Show advanced settings),
-`TELEGRAM_BOT_TOKEN`, and `DEFAULT_ACCOUNT`.
 
-**Finding your Telegram ID:** leave `ALLOWED_USER_IDS` empty, run `npm start`, send `/id` to your bot,
-then put the number in `ALLOWED_USER_IDS` and restart. Only listed IDs can use the bot
-(everyone else is ignored; only `/id` answers).
+### 4. Configuration (`.env`)
 
-## 4. Run
+| Variable | Required | Description |
+| --- | --- | --- |
+| `ACTUAL_SERVER_URL` | yes | URL of your Actual server, e.g. `http://localhost:5006` |
+| `ACTUAL_PASSWORD` | yes | Server password |
+| `ACTUAL_SYNC_ID` | yes | Actual → Settings → Show advanced settings → **Sync ID** |
+| `ACTUAL_E2E_PASSWORD` | no | Only if the budget uses end-to-end encryption |
+| `ACTUAL_DATA_DIR` | no | Local budget cache (default `./data/actual`) |
+| `TELEGRAM_BOT_TOKEN` | yes | Token from @BotFather |
+| `ALLOWED_USER_IDS` | yes | Comma-separated numeric Telegram user IDs allowed to use the bot |
+| `DEFAULT_ACCOUNT` | no | Account used when no `@account` and no active account is set |
+| `APPLY_RULES` | no | `true` (default): run Actual rules like a bank import. `false`: insert raw transactions |
+| `CURRENCY` / `LOCALE` | no | Display format of amounts (default `BRL` / `pt-BR`) |
+
+**Finding your Telegram ID:** leave `ALLOWED_USER_IDS` empty, run `npm start`, send `/id` to your bot, then put the number in `ALLOWED_USER_IDS` and restart.
+
+### 5. Run
 ```bash
 npm start
 ```
-Send `10 teste` to your bot, check that it appears in Actual, then `/undo`.
+Send `10 teste` to your bot, check that it appears in Actual, then press **↩️ Undo**.
 
-## 5. Run as a service
+### 6. Run as a service
 ```bash
 sudo cp actual-telegram-bot.service /etc/systemd/system/
 # edit User= and WorkingDirectory= if you're not user "pi"
@@ -54,10 +167,11 @@ sudo systemctl enable --now actual-telegram-bot
 journalctl -u actual-telegram-bot -f
 ```
 
+---
+
 ## Notes
 - **Long polling**: the bot asks Telegram for updates, so no public URL or port forwarding is needed.
-- **Rules**: with `APPLY_RULES=true` transactions go through Actual's import pipeline, so your
-  payee → category rules run automatically. `false` inserts raw transactions.
+- **Rules**: with `APPLY_RULES=true` transactions go through Actual's import pipeline, so your payee → category rules run automatically.
 - **Duplicates**: each Telegram message id is stored as `imported_id`, so a message is never added twice.
 - **Privacy**: regular bot chats are not end-to-end encrypted; messages pass through Telegram's servers.
-- **Currency**: set `CURRENCY` / `LOCALE` in `.env` (default BRL / pt-BR).
+- **State**: `data/state.json` stores each user's active account; `data/actual/` is the local budget cache. Both are git-ignored.

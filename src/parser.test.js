@@ -17,6 +17,9 @@ assert.equal(r.amount, 80); assert.equal(r.date, '2025-03-15'); assert.equal(r.p
 r = parseMessage('R$80 farmácia');
 assert.equal(r.amount, 80);
 
+r = parseMessage('30 jantar @conta_corrente');
+assert.equal(r.account, 'conta corrente');
+
 assert.equal(parseMessage('oi tudo bem'), null);
 assert.equal(parseMessage('0 nada'), null);
 assert.deepEqual(parseMessage('/balance nubank'), { kind: 'cmd', name: 'balance', args: ['nubank'] });

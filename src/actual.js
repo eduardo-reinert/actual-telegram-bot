@@ -31,14 +31,21 @@ const openAccounts = async () => (await api.getAccounts()).filter((a) => !a.clos
 async function resolveAccount(name) {
   const accounts = await openAccounts();
   const acc = name ? findByName(accounts, name) : findByName(accounts, DEFAULT_ACCOUNT || '') || accounts[0];
-  if (!acc) throw new Error(name ? `Account "${name}" not found` : 'No default account found');
+  if (!acc) throw new Error(name ? `Account "${name}" not found (send /accounts)` : 'No default account found (send /accounts)');
   return acc;
 }
 
 export const listAccounts = () => serial(async () => {
+  const accounts = await openAccounts();
+  const def = findByName(accounts, DEFAULT_ACCOUNT || '') || accounts[0];
   const out = [];
-  for (const a of await openAccounts()) {
-    out.push({ name: a.name, balance: api.utils.integerToAmount(await api.getAccountBalance(a.id)) });
+  for (const a of accounts) {
+    out.push({
+      name: a.name,
+      offbudget: !!a.offbudget,
+      isDefault: a.id === def?.id,
+      balance: api.utils.integerToAmount(await api.getAccountBalance(a.id)),
+    });
   }
   return out;
 });

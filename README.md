@@ -7,6 +7,7 @@ Send a Telegram message, get a transaction in Actual Budget.
 12,50 uber #transporte @nubank     → explicit category and account
 +3000 salário                      → income
 80 mercado ontem                   → date: hoje, ontem, dd/mm, dd/mm/aaaa
+200 @checking > @savings           → transfer between your own accounts
 ```
 
 Actual only ships a Node.js client (no HTTP API), so the bot is Node.js too.
@@ -25,15 +26,16 @@ Actual only ships a Node.js client (no HTTP API), so the bot is Node.js too.
 | Command | Alias | Who can use it | What it does |
 | --- | --- | --- | --- |
 | `/id` | `/start` | **Everyone** | Replies with your numeric Telegram user ID. Use it once during setup to fill in `ALLOWED_USER_IDS`. |
-| `/help` | `/ajuda` | Allowed users | Shows the quick usage guide. |
-| `/accounts` | `/contas` | Allowed users | Lists every open account with its balance and `@tag`, and lets you pick the **active account** with buttons (see below). |
+| `/help` | `/ajuda` | Allowed users | Shows the usage guide and the command list. |
+| `/accounts` | `/contas` | Allowed users | Lists every open account with its balance and `@tag`, and lets you pick the **active account** with buttons. |
+| `/transfer <amount> [@from] @to` | `/transferir` | Allowed users | Moves money between two of your accounts (see [Transfers](#transfers-between-accounts)). |
 | `/categories` | `/categorias` | Allowed users | Lists all visible categories, grouped by category group. |
 | `/balance [account]` | `/saldo` | Allowed users | Balance of one account. Without an argument it uses your default account. Write the name with spaces, e.g. `/balance conta corrente`. Partial names work (`/balance nu`). |
-| `/undo` | `/desfazer` | Allowed users | Deletes the last transaction you added through the bot. |
+| `/undo` | `/desfazer` | Allowed users | Deletes the last transaction or transfer you added through the bot (both sides of a transfer). |
 
 Anyone not in `ALLOWED_USER_IDS` is ignored, except for `/id` and `/start`. Any other `/command` gets *"Unknown command. Send /help"*.
 
-The Telegram command menu (the `/` button) shows: `/accounts`, `/categories`, `/balance`, `/undo`, `/help`.
+The Telegram command menu (the `/` button) shows: `/accounts`, `/transfer`, `/categories`, `/balance`, `/undo`, `/help`.
 
 ### Adding a transaction
 
@@ -66,14 +68,51 @@ If you don't give a category, your Actual **rules** can still assign one automat
 
 Each message is stored with a unique `imported_id`, so Telegram re-deliveries never create duplicates.
 
+### Transfers between accounts
+
+Use a transfer when you move money between your own accounts (checking → savings, checking → investments...). Actual records it as two linked transactions, one on each account, so it isn't counted as an expense or as income.
+
+Two equivalent ways to send one:
+
+```
+200 @checking > @savings            plain message, use  >  or  ->  between the accounts
+/transfer 200 @checking @savings    command, no ">" needed
+```
+
+| Form | Meaning |
+| --- | --- |
+| `200 @checking > @savings` | From `checking` to `savings`. |
+| `200 > @savings` | From your **active account** (see `/accounts`) to `savings`. |
+| `/transfer 200 @savings` | Same as above. |
+| `/transfer 200 @checking @savings` | First `@` is the source, second is the destination. |
+| `R$ 1500,50 @conta_corrente > @nubank_conta ontem` | Amounts, dates and underscore tags work like in normal transactions. |
+| `500 @checking > @savings aluguel #reserva` | Extra words become a note on the transaction; `#category` is optional. |
+
+Rules and behaviour:
+
+- Both accounts must be open accounts that exist in Actual (`/accounts` shows their `@tags`). A source equal to the destination is rejected.
+- Moving money **from an on-budget to an off-budget account** (for example checking → investments) takes money out of your budget, so Actual wants a category for it. The confirmation then shows `Category: none` and a **🏷 Set category** button. Other transfers don't need one.
+- **↩️ Undo** and `/undo` delete **both** sides of the transfer, so balances go back to what they were.
+- Sending the same Telegram message twice never creates two transfers.
+- A leading `+` is ignored in transfers: the direction is always source → destination.
+
+Example confirmation:
+
+```
+🔁 Transfer R$ 200,00
+From: Checking
+To: Nubank Conta
+Date: 2026-10-09
+```
+
 ### Confirmation message and buttons
 
-After adding a transaction the bot replies with the amount, payee, account, category and date, plus these buttons:
+After adding a transaction or transfer the bot replies with the details and these buttons:
 
 | Button | When shown | What it does |
 | --- | --- | --- |
-| **↩️ Undo** | Always | Deletes that transaction. |
-| **🏷 Set category** | Expenses with no category | Shows a list of categories to tap; the transaction is updated and the message edited. |
+| **↩️ Undo** | Always | Deletes that transaction (both sides for a transfer). |
+| **🏷 Set category** | Expenses with no category, and transfers from an on-budget to an off-budget account | Shows a list of categories to tap; the transaction is updated and the message edited. |
 
 ### `/accounts` and the active account
 
@@ -94,7 +133,7 @@ Current account for new transactions: Checking
 
 | Button | What it does |
 | --- | --- |
-| One button per account | Makes that account the **active account**. Messages without `@account` go there. Saved in `data/state.json`, so it survives restarts. |
+| One button per account | Makes that account the **active account**. Messages without `@account` go there, and it's the source of transfers without `@from`. Saved in `data/state.json`, so it survives restarts. |
 | **↺ Use default** | Clears the active account; new transactions go to `DEFAULT_ACCOUNT` from `.env` again. |
 
 The ✅ marks the account that will receive your next transaction. The `@tag` shown is exactly what you can type for a one-off override.
@@ -104,7 +143,9 @@ The ✅ marks the account that will receive your next transaction. The `@tag` sh
 | Message | Meaning |
 | --- | --- |
 | `I didn't understand. Try 25.90 padaria or /help` | The message doesn't start with an amount. |
+| `Usage: 200 @from > @to or /transfer 200 @from @to ...` | A transfer without a destination account. |
 | `Account "x" not found (send /accounts)` | No open account matches that name. |
+| `Source and destination accounts are the same` | A transfer from an account to itself. |
 | `Category "x" not found (send /categories)` | No visible category matches that name. |
 | `That message was already imported (duplicate ignored).` | Same Telegram message was received twice. |
 | `Nothing to undo.` | `/undo` with no transaction added since the bot started. |
@@ -122,10 +163,10 @@ The ✅ marks the account that will receive your next transaction. The `@tag` sh
 ### 2. Requirements on the Pi
 - 64-bit Raspberry Pi OS, Pi 3/4/5, ≥1 GB RAM
 - Node.js 20.6+ (22 LTS recommended):
-```bash
+  ```bash
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt install -y nodejs build-essential python3
-```
+  ```
 
 ### 3. Install
 ```bash

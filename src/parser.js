@@ -3,6 +3,10 @@
 //   12,50 uber #transport @nubank ontem
 //   +3000 salario
 //   R$ 80 mercado 15/03
+// Transfers (money between your own accounts):
+//   200 @checking > @savings
+//   200 > @savings          (from = active account)
+const SEP_RE = /^(?:->|=>|→|>)(.*)$/;
 const AMOUNT_RE = /^([+-])?(?:R\$|\$|€)?(\d+(?:[.,]\d{1,2})?)$/i;
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -35,12 +39,15 @@ function parseDateToken(tok) {
 }
 
 /**
+ * @param {{forceTransfer?: boolean}} opts  forceTransfer: used by /transfer, where no ">" is needed
  * @returns {null | {kind:'tx', amount:number, income:boolean, payee:string,
  *   category:string|null, account:string|null, date:string}
+ *   | {kind:'transfer', amount:number, from:string|null, to:string|null,
+ *      category:string|null, date:string, note:string}
  *   | {kind:'cmd', name:string, args:string[]}}
  * null = not for the bot (ignored silently)
  */
-export function parseMessage(text) {
+export function parseMessage(text, { forceTransfer = false } = {}) {
   if (!text) return null;
   const trimmed = text.trim();
 
@@ -65,21 +72,48 @@ export function parseMessage(text) {
   if (!(amount > 0)) return null;
 
   let category = null;
-  let account = null;
   let date = daysAgo(0);
+  let sawSeparator = false;
+  const accounts = []; // { name, afterSeparator }
   const payeeParts = [];
 
-  for (const tok of tokens.slice(amountIdx + 1)) {
+  for (const raw of tokens.slice(amountIdx + 1)) {
+    let tok = raw;
+    const sep = tok.match(SEP_RE);
+    if (sep) {
+      sawSeparator = true;
+      tok = sep[1];
+      if (!tok) continue;
+    }
     if (tok.startsWith('#') && tok.length > 1) category = tok.slice(1);
-    else if (tok.startsWith('@') && tok.length > 1) account = tok.slice(1).replace(/_/g, ' ');
-    else {
+    else if (tok.startsWith('@') && tok.length > 1) {
+      accounts.push({ name: tok.slice(1).replace(/_/g, ' '), afterSeparator: sawSeparator });
+    } else {
       const d = parseDateToken(tok);
       if (d) date = d;
       else payeeParts.push(tok);
     }
   }
 
-  return { kind: 'tx', amount, income, payee: payeeParts.join(' '), category, account, date };
+  if (sawSeparator || forceTransfer) {
+    let from = null;
+    let to = null;
+    if (sawSeparator) {
+      from = accounts.find((a) => !a.afterSeparator)?.name ?? null;
+      to = accounts.find((a) => a.afterSeparator)?.name ?? null;
+    } else if (accounts.length >= 2) {
+      from = accounts[0].name;
+      to = accounts[1].name;
+    } else if (accounts.length === 1) {
+      to = accounts[0].name; // "/transfer 200 @savings" -> from the active account
+    }
+    return { kind: 'transfer', amount, from, to, category, date, note: payeeParts.join(' ') };
+  }
+
+  return {
+    kind: 'tx', amount, income, payee: payeeParts.join(' '), category,
+    account: accounts[0]?.name ?? null, date,
+  };
 }
 
 /** Case/accent-insensitive lookup: exact match first, then "contains". */

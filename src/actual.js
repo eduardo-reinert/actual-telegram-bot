@@ -115,7 +115,66 @@ export const setCategory = (txId, categoryId) => serial(async () => {
   await api.sync();
 });
 
+/**
+ * Money between two of your accounts. Actual models this as a pair of linked
+ * transactions, created automatically when the source transaction uses the
+ * destination account's "transfer payee".
+ * t: output of parseMessage() with kind 'transfer' (t.to required).
+ */
+export const addTransfer = (t, msgId) => serial(async () => {
+  if (!t.to) throw new Error('Missing destination account');
+  await api.sync();
+  const from = await resolveAccount(t.from);
+  const to = await resolveAccount(t.to);
+  if (from.id === to.id) throw new Error('Source and destination accounts are the same');
+
+  const payee = (await api.getPayees()).find((p) => p.transfer_acct === to.id);
+  if (!payee) throw new Error(`No transfer payee found for "${to.name}"`);
+
+  const allCats = await api.getCategories();
+  let categoryId;
+  let categoryName = null;
+  if (t.category) {
+    const cat = findByName(allCats.filter((c) => !c.hidden), t.category);
+    if (!cat) throw new Error(`Category "${t.category}" not found (send /categories)`);
+    categoryId = cat.id;
+    categoryName = cat.name;
+  }
+
+  const importedId = `telegram-${msgId}`;
+  const cents = -api.utils.amountToInteger(t.amount);
+  const res = await api.importTransactions(from.id, [{
+    account: from.id,
+    date: t.date,
+    amount: cents,
+    payee: payee.id,
+    category: categoryId,
+    notes: t.note ? `${t.note} (via Telegram)` : 'via Telegram',
+    imported_id: importedId,
+    cleared: false,
+  }], { defaultCleared: false });
+  if (res.errors?.length) throw new Error(JSON.stringify(res.errors));
+  await api.sync();
+
+  if (!res.added?.length) return { duplicate: true };
+
+  const saved = (await api.getTransactions(from.id, t.date, t.date)).find((x) => x.imported_id === importedId);
+  return {
+    id: saved?.id ?? res.added[0],
+    from: from.name,
+    to: to.name,
+    cents,
+    category: categoryName,
+    // on-budget -> off-budget leaves the budget: Actual wants a category for it
+    needsCategory: !from.offbudget && !!to.offbudget,
+  };
+});
+
+/** Deletes a transaction; for transfers, also deletes the linked transaction on the other account. */
 export const deleteTransaction = (id) => serial(async () => {
+  const { data } = await api.runQuery(api.q('transactions').filter({ id }).select(['id', 'transfer_id']));
   await api.deleteTransaction(id);
+  const other = data?.[0]?.transfer_id;
+  if (other) await api.deleteTransaction(other);
   await api.sync();
 });

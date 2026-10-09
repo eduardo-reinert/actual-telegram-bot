@@ -20,6 +20,31 @@ assert.equal(r.amount, 80);
 r = parseMessage('30 jantar @conta_corrente');
 assert.equal(r.account, 'conta corrente');
 
+// transfers
+r = parseMessage('200 @checking > @savings');
+assert.equal(r.kind, 'transfer'); assert.equal(r.amount, 200);
+assert.equal(r.from, 'checking'); assert.equal(r.to, 'savings');
+
+r = parseMessage('R$ 1500,50 @conta_corrente -> @nubank_conta ontem #reserva');
+assert.equal(r.kind, 'transfer'); assert.equal(r.amount, 1500.5);
+assert.equal(r.from, 'conta corrente'); assert.equal(r.to, 'nubank conta'); assert.equal(r.category, 'reserva');
+
+r = parseMessage('200 > @savings');           // from = active account
+assert.equal(r.kind, 'transfer'); assert.equal(r.from, null); assert.equal(r.to, 'savings');
+
+r = parseMessage('200 @checking >@savings aluguel');
+assert.equal(r.from, 'checking'); assert.equal(r.to, 'savings'); assert.equal(r.note, 'aluguel');
+
+r = parseMessage('200 @checking @savings', { forceTransfer: true });   // /transfer
+assert.equal(r.kind, 'transfer'); assert.equal(r.from, 'checking'); assert.equal(r.to, 'savings');
+r = parseMessage('200 @savings', { forceTransfer: true });
+assert.equal(r.from, null); assert.equal(r.to, 'savings');
+r = parseMessage('200', { forceTransfer: true });
+assert.equal(r.to, null);
+
+r = parseMessage('45 jantar @nubank');          // still a normal expense
+assert.equal(r.kind, 'tx'); assert.equal(r.account, 'nubank');
+
 assert.equal(parseMessage('oi tudo bem'), null);
 assert.equal(parseMessage('0 nada'), null);
 assert.deepEqual(parseMessage('/balance nubank'), { kind: 'cmd', name: 'balance', args: ['nubank'] });

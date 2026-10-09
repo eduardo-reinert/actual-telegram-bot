@@ -23,13 +23,28 @@ const HELP = `<b>Actual Budget bot</b>
 <code>+3000 salário</code> (income)
 <code>80 mercado 15/03</code>
 
+<b>Transfer between accounts</b>
+<code>200 @checking &gt; @savings</code>
+<code>200 &gt; @savings</code> (from the active account)
+<code>/transfer 200 @checking @savings</code>
+
 • <code>#category</code> · <code>@account</code> · date: hoje, ontem, dd/mm, dd/mm/aaaa
 • No @account → your active account (see /accounts)
 • Account names with spaces: <code>@conta_corrente</code>
 • Use the buttons under each confirmation to undo or set a category
 
 <b>Commands</b>
-/accounts (view &amp; choose account) · /categories · /balance [account] · /undo · /id · /help`;
+/accounts – view accounts and choose the active one
+/transfer – move money between accounts
+/categories – list categories
+/balance [account] – balance of an account
+/undo – delete the last transaction (both sides of a transfer)
+/id – show your Telegram user ID
+/help – show this message`;
+
+const TRANSFER_USAGE =
+  'Usage: <code>200 @from &gt; @to</code> or <code>/transfer 200 @from @to</code>\n' +
+  'Without @from the active account is used (see /accounts). Add <code>#category</code> or a date if needed.';
 
 const bot = new Bot(TELEGRAM_BOT_TOKEN);
 const lastTx = new Map(); // userId -> last transaction id (for /undo)
@@ -115,11 +130,40 @@ bot.command(['undo', 'desfazer'], async (ctx) => {
   await ctx.reply('↩️ Last transaction deleted.');
 });
 
+// ---- transfers between your own accounts ----
+async function doTransfer(ctx, parsed) {
+  if (!parsed.to) return ctx.reply(TRANSFER_USAGE, HTML);
+  parsed.from = parsed.from ?? getActiveAccount(ctx.from.id); // null → DEFAULT_ACCOUNT
+
+  const r = await actual.addTransfer(parsed, `${ctx.chat.id}-${ctx.message.message_id}`);
+  if (r.duplicate) return ctx.reply('That message was already imported (duplicate ignored).');
+
+  lastTx.set(ctx.from.id, r.id);
+  const kb = new InlineKeyboard().text('↩️ Undo', `u:${r.id}`);
+  if (r.needsCategory && !r.category) kb.text('🏷 Set category', `p:${r.id}`);
+
+  await ctx.reply(
+    `🔁 Transfer <b>${money(Math.abs(r.cents) / 100)}</b>\n` +
+    `From: ${esc(r.from)}\n` +
+    `To: ${esc(r.to)}\n` +
+    (r.needsCategory || r.category ? `Category: ${r.category ? esc(r.category) : '<i>none</i>'}\n` : '') +
+    `Date: ${parsed.date}`,
+    { ...HTML, reply_markup: kb },
+  );
+}
+
+bot.command(['transfer', 'transferir'], async (ctx) => {
+  const parsed = parseMessage(ctx.match ?? '', { forceTransfer: true });
+  if (!parsed) return ctx.reply(TRANSFER_USAGE, HTML);
+  await doTransfer(ctx, parsed);
+});
+
 // ---- plain text: "25.90 padaria" ----
 bot.on('message:text', async (ctx) => {
   const parsed = parseMessage(ctx.message.text);
   if (!parsed) return ctx.reply('I didn\'t understand. Try <code>25.90 padaria</code> or /help', HTML);
   if (parsed.kind === 'cmd') return ctx.reply('Unknown command. Send /help');
+  if (parsed.kind === 'transfer') return doTransfer(ctx, parsed);
 
   if (!parsed.account) parsed.account = getActiveAccount(ctx.from.id); // null → DEFAULT_ACCOUNT
   const r = await actual.addTransaction(parsed, `${ctx.chat.id}-${ctx.message.message_id}`);
@@ -186,9 +230,10 @@ console.log('✅ Actual Budget loaded');
 
 await bot.api.setMyCommands([
   { command: 'accounts', description: 'View accounts and choose the active one' },
+  { command: 'transfer', description: 'Move money between accounts' },
   { command: 'categories', description: 'List categories' },
   { command: 'balance', description: 'Balance of an account' },
-  { command: 'undo', description: 'Delete the last transaction' },
+  { command: 'undo', description: 'Delete the last transaction or transfer' },
   { command: 'help', description: 'How to use the bot' },
 ]);
 

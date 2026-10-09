@@ -42,7 +42,7 @@ The Telegram command menu (the `/` button) shows: `/accounts`, `/transfer`, `/ca
 Send a plain message (no slash). The amount must come first; everything else is optional and can be in any order after it.
 
 ```
-<amount> [payee words] [#category] [@account] [date]
+<amount> [payee words] [#category] [@account] [date] [| note]
 ```
 
 | Part | Format | Examples |
@@ -53,6 +53,7 @@ Send a plain message (no slash). The amount must come first; everything else is 
 | **Category** | `#` plus one word. Case and accent insensitive; a partial name works if unambiguous. Must be a single word, so for "Fast Food" use `#fast`. | `#transporte` · `#alimentacao` |
 | **Account** | `@` plus the account tag. Underscores stand in for spaces. Overrides the active account for this message only. | `@nubank` · `@conta_corrente` |
 | **Date** | Defaults to today. | `hoje` · `ontem` · `anteontem` · `15/03` · `15/03/2025` · `2025-03-15` |
+| **Note** | Optional text after `|`. The text before it remains the payee; everything after it is stored as the transaction note. | `25 cafe | cafe da equipe` |
 
 More examples:
 
@@ -62,9 +63,11 @@ More examples:
 +3000 salário
 R$ 80 mercado 15/03
 45 jantar @conta_corrente hoje
+25 cafe #alimentacao | cafe da equipe
 ```
 
 If you don't give a category, your Actual **rules** can still assign one automatically (when `APPLY_RULES=true`). If nothing matches, the confirmation offers a **Set category** button for expenses.
+Use `|` to add a note to any expense or income without changing its payee. The confirmation shows the note, and Actual stores it along with the bot attribution.
 
 Each message is stored with a unique `imported_id`, so Telegram re-deliveries never create duplicates.
 
@@ -87,6 +90,7 @@ Two equivalent ways to send one:
 | `/transfer 200 @checking @savings` | First `@` is the source, second is the destination. |
 | `R$ 1500,50 @conta_corrente > @nubank_conta ontem` | Amounts, dates and underscore tags work like in normal transactions. |
 | `500 @checking > @savings aluguel #reserva` | Extra words become a note on the transaction; `#category` is optional. |
+| `500 @checking > @savings | aporte de emergencia` | Text after `|` becomes a note; useful when the note contains words that look like category, account, or date tokens. |
 
 Rules and behaviour:
 

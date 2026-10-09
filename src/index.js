@@ -22,6 +22,7 @@ const HELP = `<b>Actual Budget bot</b>
 <code>12,50 uber #transporte @nubank ontem</code>
 <code>+3000 salário</code> (income)
 <code>80 mercado 15/03</code>
+<code>25 cafe | cafe da equipe</code> (note)
 
 <b>Transfer between accounts</b>
 <code>200 @checking &gt; @savings</code>
@@ -29,6 +30,7 @@ const HELP = `<b>Actual Budget bot</b>
 <code>/transfer 200 @checking @savings</code>
 
 • <code>#category</code> · <code>@account</code> · date: hoje, ontem, dd/mm, dd/mm/aaaa
+• Add <code>| note</code> to store a custom note without changing the payee
 • No @account → your active account (see /accounts)
 • Account names with spaces: <code>@conta_corrente</code>
 • Use the buttons under each confirmation to undo or set a category
@@ -146,6 +148,7 @@ async function doTransfer(ctx, parsed) {
     `🔁 Transfer <b>${money(Math.abs(r.cents) / 100)}</b>\n` +
     `From: ${esc(r.from)}\n` +
     `To: ${esc(r.to)}\n` +
+    (parsed.note ? `Note: ${esc(parsed.note)}\n` : '') +
     (r.needsCategory || r.category ? `Category: ${r.category ? esc(r.category) : '<i>none</i>'}\n` : '') +
     `Date: ${parsed.date}`,
     { ...HTML, reply_markup: kb },
@@ -176,6 +179,7 @@ bot.on('message:text', async (ctx) => {
   await ctx.reply(
     `✅ ${r.cents < 0 ? 'Expense' : 'Income'} <b>${money(Math.abs(r.cents) / 100)}</b>\n` +
     (parsed.payee ? `Payee: ${esc(parsed.payee)}\n` : '') +
+    (parsed.note ? `Note: ${esc(parsed.note)}\n` : '') +
     `Account: ${esc(r.account)}\n` +
     `Category: ${r.category ? esc(r.category) : '<i>none</i>'}\n` +
     `Date: ${parsed.date}`,

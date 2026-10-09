@@ -87,7 +87,7 @@ export const addTransaction = (tx, msgId) => serial(async () => {
     amount: cents,
     payee_name: tx.payee || undefined,
     category: categoryId,
-    notes: 'via Telegram',
+    notes: tx.note ? `${tx.note} (via Telegram)` : 'via Telegram',
     imported_id: importedId,
     cleared: false,
   };

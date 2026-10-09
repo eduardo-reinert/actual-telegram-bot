@@ -74,10 +74,21 @@ export function parseMessage(text, { forceTransfer = false } = {}) {
   let category = null;
   let date = daysAgo(0);
   let sawSeparator = false;
+  let sawNoteSeparator = false;
   const accounts = []; // { name, afterSeparator }
   const payeeParts = [];
+  const noteParts = [];
 
   for (const raw of tokens.slice(amountIdx + 1)) {
+    if (raw === '|') {
+      sawNoteSeparator = true;
+      continue;
+    }
+    if (sawNoteSeparator) {
+      noteParts.push(raw);
+      continue;
+    }
+
     let tok = raw;
     const sep = tok.match(SEP_RE);
     if (sep) {
@@ -107,11 +118,14 @@ export function parseMessage(text, { forceTransfer = false } = {}) {
     } else if (accounts.length === 1) {
       to = accounts[0].name; // "/transfer 200 @savings" -> from the active account
     }
-    return { kind: 'transfer', amount, from, to, category, date, note: payeeParts.join(' ') };
+    return {
+      kind: 'transfer', amount, from, to, category, date,
+      note: [...payeeParts, ...noteParts].join(' '),
+    };
   }
 
   return {
-    kind: 'tx', amount, income, payee: payeeParts.join(' '), category,
+    kind: 'tx', amount, income, payee: payeeParts.join(' '), note: noteParts.join(' '), category,
     account: accounts[0]?.name ?? null, date,
   };
 }

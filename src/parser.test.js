@@ -20,6 +20,11 @@ assert.equal(r.amount, 80);
 r = parseMessage('30 jantar @conta_corrente');
 assert.equal(r.account, 'conta corrente');
 
+r = parseMessage('25 cafe #alimentacao @nubank | cafe da equipe');
+assert.equal(r.kind, 'tx'); assert.equal(r.payee, 'cafe');
+assert.equal(r.category, 'alimentacao'); assert.equal(r.account, 'nubank');
+assert.equal(r.note, 'cafe da equipe');
+
 // transfers
 r = parseMessage('200 @checking > @savings');
 assert.equal(r.kind, 'transfer'); assert.equal(r.amount, 200);
@@ -34,6 +39,8 @@ assert.equal(r.kind, 'transfer'); assert.equal(r.from, null); assert.equal(r.to,
 
 r = parseMessage('200 @checking >@savings aluguel');
 assert.equal(r.from, 'checking'); assert.equal(r.to, 'savings'); assert.equal(r.note, 'aluguel');
+r = parseMessage('200 @checking > @savings | reserva de emergencia #ignored');
+assert.equal(r.note, 'reserva de emergencia #ignored');
 
 r = parseMessage('200 @checking @savings', { forceTransfer: true });   // /transfer
 assert.equal(r.kind, 'transfer'); assert.equal(r.from, 'checking'); assert.equal(r.to, 'savings');
